@@ -24,18 +24,18 @@ sudo mosquitto_pub -h 127.0.0.1 -t radio/switch -n -r -d
 #include <WiFi.h>
 #include <PubSubClient.h>
 
-const char *ssid =  "xxxxxx";   // name of your WiFi network
-const char *password =  "xxxxxx"; // password of the WiFi network
+const char *ssid =  "xxxxxxx";   // name of your WiFi network
+const char *password =  "xxxxxxx"; // password of the WiFi network
 const byte ampl_power = 26;// relay pin
 const byte SWITCH_PIN = 14;// Pin to control the light with
 const char *ID = "smartradio";  // Name of our device, must be unique
 const char *TOPIC_switch = "radio/switch";  // Topic to subcribe to
 const char *TOPIC_status = "radio/status";  // Topic to subcribe to
 unsigned long previousMillis = 0;
-unsigned long previousMillis1 = 0;
-unsigned long interval = 180000;
-unsigned long interval_powersafe = 10000;
+unsigned long interval = 360000;
+unsigned long delay_powersafe = 10000;
 unsigned long time_now = 0;
+int count_cycle_powersafe=0;
 bool state=0;
 bool count_check_MQTT = 0;
 bool power_safe_state=0;
@@ -112,7 +112,7 @@ void MQTT_reconnect() {
             client.publish(TOPIC_switch, "ON");
             client.publish(TOPIC_status,"ON");
             } else {
-               Serial.println("ON state - MQTT broker unavailable, try again in 3 minutes");
+               Serial.println("ON state - MQTT broker unavailable, try again in 6 minutes");
                  }
            }  
      }
@@ -128,7 +128,7 @@ void MQTT_reconnect() {
             client.publish(TOPIC_switch, "OFF");
             client.publish(TOPIC_status,"OFF");
             } else {
-               Serial.println("OFF state - MQTT broker unavailable, try again in 3 minutes");
+               Serial.println("OFF state - MQTT broker unavailable, try again in 6 minutes");
                  }
            }   
       }
@@ -136,7 +136,7 @@ void MQTT_reconnect() {
   
 }
 
-//Check every 3 min. If the MQTT broker is not connected, try to reconnect. Leave the current amplifier status unchanged
+//Check every 6 min. If the MQTT broker is not connected, try to reconnect. Leave the current amplifier status unchanged
 void MQTT_reconnect_timer() {
   if (millis() - previousMillis > interval) {
        previousMillis = millis();
@@ -173,6 +173,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
   }
 }
 
+/**************
 void check_MQTT_broker() {
      if ((!client.connected()) && (count_check_MQTT == 0))  {
         Serial.print("MQTT broker UNAVAILABLE");
@@ -180,9 +181,12 @@ void check_MQTT_broker() {
         count_check_MQTT = 1;
      }
      if ((client.connected())  && (count_check_MQTT == 1)) {
+        Serial.print("MQTT broker AVAILABLE AGAIN");
         count_check_MQTT = 0;
-     }
+    }
 }
+**************/
+
 
 // Connect to WiFi network
 void setup_wifi() {
@@ -218,9 +222,6 @@ void power_safe_recovery() {
         if (WiFi.status() != WL_CONNECTED) {
          setup_wifi();
          }
-        if (WiFi.status() == WL_CONNECTED) {
-         wifi_down = 0;
-         }
         if ((wakeup_reason == ESP_SLEEP_WAKEUP_EXT0) && (WiFi.status() == WL_CONNECTED)) {
           digitalWrite(ampl_power, HIGH);
           (state = 1);
@@ -233,35 +234,41 @@ void power_safe_recovery() {
         }
 }
 
-//Start power safe mode when the amplifier is off and MQTT broker is unreacheble
+//Start power safe mode when the amplifier is off and MQTT broker is unreacheble or WIFI NOT CONNECTED - delay 10secs.
 void power_safe() {
-  //time_now = millis();
-  //while(millis() < time_now + interval_powersafe) {
      if((WiFi.status() != WL_CONNECTED)) {
-        wifi_down = 1;
         state = 0;
+        power_safe_state=1;
         digitalWrite(ampl_power, LOW);
         Serial.println("Power safe mode ENABLED - LIGHT SLEEP");
         Serial.println("WIFI NETWORK NOT CONNECTED/REACHABLE");
-        power_safe_state=1;
         delay(1000);
         Serial.flush();
         esp_light_sleep_start();     
      }
-     if((state == 0) && (!client.connected()) && (wifi_down == 0)) {
-        Serial.println("Power safe mode ENABLED - LIGHT SLEEP");
-        power_safe_state=1;
-        delay(1000);
-        Serial.flush();
-        esp_light_sleep_start();     
-     }
-  }
-//}
+         
+     if((state == 0) && (!client.connected()) && (WiFi.status() == WL_CONNECTED)) { 
+        while (count_cycle_powersafe < 1) {
+            time_now = millis();
+            count_cycle_powersafe++;
+            }
+        if(millis() - time_now > delay_powersafe) {
+          time_now = millis(); 
+          count_cycle_powersafe = 0;
+          power_safe_state=1;
+          Serial.println("Power safe mode ENABLED - LIGHT SLEEP");
+          delay(1000);
+          Serial.flush();
+          esp_light_sleep_start();     
+         }
+    }
+}
+
 
 //Physical button switch ON/OFF
 void switchON_button() {
-  if(digitalRead(SWITCH_PIN) == 1)
-  {
+  if((digitalRead(SWITCH_PIN) == 1) && (WiFi.status() == WL_CONNECTED)){
+    count_cycle_powersafe = 0;
     state = !state; //toggle state
     if(state == 1) // ON
      {
@@ -292,7 +299,7 @@ void switchON_button() {
 void loop() {
       power_safe_recovery();
       switchON_button();
-      check_MQTT_broker();
+      //check_MQTT_broker();
       MQTT_reconnect_timer();
       client.loop();
       power_safe();
