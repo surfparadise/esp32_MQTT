@@ -8,7 +8,7 @@ switch:
     name: smartradio
     state_topic: "radio/status"
     command_topic: "radio/switch"
-    qos: 0
+    qos: 1
     payload_on: "ON"
     payload_off: "OFF"
     state_on: "ON"
@@ -34,8 +34,10 @@ const char *TOPIC_status = "radio/status";  // Topic to subcribe to
 unsigned long previousMillis = 0;
 unsigned long interval = 180000;
 bool state=0;
-bool n=0;
+bool count_check_MQTT = 0;
 bool power_safe_state=0;
+int count=0;
+int wifi_down=0;
 
 #define BUTTON_PIN_BITMASK 0x200000000 // 2^33 in hex
 #define uS_TO_S_FACTOR 1000000  /* Conversion factor for micro seconds to seconds */
@@ -55,10 +57,9 @@ void setup() {
   esp_sleep_enable_ext0_wakeup(GPIO_NUM_14,1);
   esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
   //esp_sleep_enable_ext1_wakeup(BUTTON_PIN_BITMASK,ESP_EXT1_WAKEUP_ANY_HIGH);
+  print_wakeup_reason();
   setup_wifi(); // Connect to network
   setup_MQTT();
-  
-  print_wakeup_reason();
 }
 
 //esp32 wakeup from sleep status reason
@@ -108,7 +109,6 @@ void MQTT_reconnect() {
             Serial.println('\n');
             client.publish(TOPIC_switch, "ON");
             client.publish(TOPIC_status,"ON");
-            n = 0;
             } else {
                Serial.println("ON state - MQTT broker unavailable, try again in 3 minutes");
                  }
@@ -125,7 +125,6 @@ void MQTT_reconnect() {
             Serial.println('\n');
             client.publish(TOPIC_switch, "OFF");
             client.publish(TOPIC_status,"OFF");
-            n = 0;
             } else {
                Serial.println("OFF state - MQTT broker unavailable, try again in 3 minutes");
                  }
@@ -171,13 +170,14 @@ void callback(char* topic, byte* payload, unsigned int length) {
 }
 
 void check_MQTT_broker() {
-     if (!client.connected()) {
-        if (n == 0) {
+     if ((!client.connected()) && (count_check_MQTT == 0))  {
         Serial.print("MQTT broker UNAVAILABLE");
         Serial.println('\n');
-        n = 1;
+        count_check_MQTT = 1;
      }
-  }
+     if ((client.connected())  && (count_check_MQTT == 1)) {
+        count_check_MQTT = 0;
+     }
 }
 
 // Connect to WiFi network
@@ -185,9 +185,10 @@ void setup_wifi() {
   Serial.print("\nConnecting to ");
   Serial.println(ssid);
   WiFi.begin(ssid, password); // Connect to network
-  while (WiFi.status() != WL_CONNECTED) { // Wait for connection
-    delay(200);
+  while ((WiFi.status() != WL_CONNECTED) && (count < 30)){
+    delay(300);
     Serial.print(".");
+    count++;
   }
   Serial.println();
   Serial.println("WiFi connected");
@@ -205,6 +206,9 @@ void power_safe_recovery() {
         if (WiFi.status() != WL_CONNECTED) { // Wait for connection
          setup_wifi();
          }
+        if (WiFi.status() == WL_CONNECTED) {
+         wifi_down = 0;
+        }
         if (wakeup_reason == ESP_SLEEP_WAKEUP_EXT0) {
           digitalWrite(ampl_power, HIGH);
           (state = 1);
@@ -219,7 +223,17 @@ void power_safe_recovery() {
 
 //Start power safe mode when the amplifier is off and MQTT broker is unreacheble
 void power_safe() {
-     if((state == 0) && (!client.connected())) {
+     if((WiFi.status() != WL_CONNECTED)) {
+     wifi_down = 1;
+     state = 0;
+     digitalWrite(ampl_power, LOW);
+     Serial.println("Power safe mode ENABLED because WIFI NETWORK NOT CONNECTED");
+     power_safe_state=1;
+     delay(1000);
+     Serial.flush();
+     esp_light_sleep_start();     
+     }
+     if((state == 0) && (!client.connected()) && (wifi_down == 0)) {
      Serial.println("Power safe mode ENABLED - LIGHT SLEEP");
      power_safe_state=1;
      delay(1000);
