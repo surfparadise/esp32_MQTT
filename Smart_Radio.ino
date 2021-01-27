@@ -25,7 +25,7 @@ sudo mosquitto_pub -h 127.0.0.1 -t radio/switch -n -r -d
 #include <PubSubClient.h>
 
 const char *ssid =  "xxxxxxx";   // name of your WiFi network
-const char *password =  "xxxxxxx"; // password of the WiFi network
+const char *password =  "xxxxxx"; // password of the WiFi network
 const byte ampl_power = 26;// relay pin
 const byte SWITCH_PIN = 14;// Pin to control the light with
 const char *ID = "smartradio";  // Name of our device, must be unique
@@ -89,8 +89,7 @@ void setup_MQTT() {
       Serial.println(TOPIC_switch);
       Serial.println('\n');
       }else {
-           Serial.println(" MQTT broker unavailable");
-           Serial.println(" try again in 3 minutes");
+           Serial.println("MQTT broker SETUP but NOT available");
     }
   client.setCallback(callback);// Initialize the callback routine
 }
@@ -190,10 +189,16 @@ void setup_wifi() {
     Serial.print(".");
     count++;
   }
-  Serial.println();
-  Serial.println("WiFi connected");
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
+  if(WiFi.status() != WL_CONNECTED){
+      Serial.println();
+      Serial.println("WIFI NOT CONNECTED");
+  }
+  if(WiFi.status() == WL_CONNECTED){
+      Serial.println();
+      Serial.println("WiFi connected");
+      Serial.print("IP address: ");
+      Serial.println(WiFi.localIP());
+  }
 }
 
 //if wakeup ESP32 manually via switch button, switch ON the amplifier, if not leave amplifier OFF
@@ -208,15 +213,15 @@ void power_safe_recovery() {
          }
         if (WiFi.status() == WL_CONNECTED) {
          wifi_down = 0;
-        }
-        if (wakeup_reason == ESP_SLEEP_WAKEUP_EXT0) {
+         }
+        if ((wakeup_reason == ESP_SLEEP_WAKEUP_EXT0) && (WiFi.status() == WL_CONNECTED)) {
           digitalWrite(ampl_power, HIGH);
           (state = 1);
           MQTT_reconnect();
-          }
-        if (wakeup_reason == ESP_SLEEP_WAKEUP_TIMER) {
+         }
+        if ((wakeup_reason == ESP_SLEEP_WAKEUP_TIMER) && (WiFi.status() == WL_CONNECTED)){
           MQTT_reconnect();
-          }       
+         }      
         power_safe_state=0;
         }
 }
