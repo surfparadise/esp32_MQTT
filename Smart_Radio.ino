@@ -24,7 +24,7 @@ sudo mosquitto_pub -h 127.0.0.1 -t radio/switch -n -r -d
 #include <WiFi.h>
 #include <PubSubClient.h>
 
-const char *ssid =  "xxxxxxx";   // name of your WiFi network
+const char *ssid =  "xxxxxx";   // name of your WiFi network
 const char *password =  "xxxxxx"; // password of the WiFi network
 const byte ampl_power = 26;// relay pin
 const byte SWITCH_PIN = 14;// Pin to control the light with
@@ -32,7 +32,10 @@ const char *ID = "smartradio";  // Name of our device, must be unique
 const char *TOPIC_switch = "radio/switch";  // Topic to subcribe to
 const char *TOPIC_status = "radio/status";  // Topic to subcribe to
 unsigned long previousMillis = 0;
+unsigned long previousMillis1 = 0;
 unsigned long interval = 180000;
+unsigned long interval_powersafe = 10000;
+unsigned long time_now = 0;
 bool state=0;
 bool count_check_MQTT = 0;
 bool power_safe_state=0;
@@ -137,8 +140,10 @@ void MQTT_reconnect() {
 void MQTT_reconnect_timer() {
   if (millis() - previousMillis > interval) {
        previousMillis = millis();
+       if ((WiFi.status() == WL_CONNECTED)) {
        MQTT_reconnect();
- }
+       }
+  }
 }
 
 
@@ -181,7 +186,7 @@ void check_MQTT_broker() {
 
 // Connect to WiFi network
 void setup_wifi() {
-  Serial.print("\nConnecting to ");
+  Serial.print("\nConnecting to WIFI: ");
   Serial.println(ssid);
   WiFi.begin(ssid, password); // Connect to network
   while ((WiFi.status() != WL_CONNECTED) && (count < 30)){
@@ -192,12 +197,14 @@ void setup_wifi() {
   if(WiFi.status() != WL_CONNECTED){
       Serial.println();
       Serial.println("WIFI NOT CONNECTED");
+      count = 0;
   }
   if(WiFi.status() == WL_CONNECTED){
       Serial.println();
       Serial.println("WiFi connected");
       Serial.print("IP address: ");
       Serial.println(WiFi.localIP());
+      count = 0;
   }
 }
 
@@ -205,10 +212,10 @@ void setup_wifi() {
 void power_safe_recovery() {
       if(power_safe_state == 1) {
          print_wakeup_reason();
-         delay(250);
          esp_sleep_wakeup_cause_t wakeup_reason;
          wakeup_reason = esp_sleep_get_wakeup_cause();
-        if (WiFi.status() != WL_CONNECTED) { // Wait for connection
+         delay(250);
+        if (WiFi.status() != WL_CONNECTED) {
          setup_wifi();
          }
         if (WiFi.status() == WL_CONNECTED) {
@@ -228,24 +235,28 @@ void power_safe_recovery() {
 
 //Start power safe mode when the amplifier is off and MQTT broker is unreacheble
 void power_safe() {
+  //time_now = millis();
+  //while(millis() < time_now + interval_powersafe) {
      if((WiFi.status() != WL_CONNECTED)) {
-     wifi_down = 1;
-     state = 0;
-     digitalWrite(ampl_power, LOW);
-     Serial.println("Power safe mode ENABLED because WIFI NETWORK NOT CONNECTED");
-     power_safe_state=1;
-     delay(1000);
-     Serial.flush();
-     esp_light_sleep_start();     
+        wifi_down = 1;
+        state = 0;
+        digitalWrite(ampl_power, LOW);
+        Serial.println("Power safe mode ENABLED - LIGHT SLEEP");
+        Serial.println("WIFI NETWORK NOT CONNECTED/REACHABLE");
+        power_safe_state=1;
+        delay(1000);
+        Serial.flush();
+        esp_light_sleep_start();     
      }
      if((state == 0) && (!client.connected()) && (wifi_down == 0)) {
-     Serial.println("Power safe mode ENABLED - LIGHT SLEEP");
-     power_safe_state=1;
-     delay(1000);
-     Serial.flush();
-     esp_light_sleep_start();     
+        Serial.println("Power safe mode ENABLED - LIGHT SLEEP");
+        power_safe_state=1;
+        delay(1000);
+        Serial.flush();
+        esp_light_sleep_start();     
      }
-}
+  }
+//}
 
 //Physical button switch ON/OFF
 void switchON_button() {
