@@ -173,20 +173,6 @@ void callback(char* topic, byte* payload, unsigned int length) {
   }
 }
 
-/**************
-void check_MQTT_broker() {
-     if ((!client.connected()) && (count_check_MQTT == 0))  {
-        Serial.print("MQTT broker UNAVAILABLE");
-        Serial.println('\n');
-        count_check_MQTT = 1;
-     }
-     if ((client.connected())  && (count_check_MQTT == 1)) {
-        Serial.print("MQTT broker AVAILABLE AGAIN");
-        count_check_MQTT = 0;
-    }
-}
-**************/
-
 
 // Connect to WiFi network
 void setup_wifi() {
@@ -299,7 +285,6 @@ void switchON_button() {
 void loop() {
       power_safe_recovery();
       switchON_button();
-      //check_MQTT_broker();
       MQTT_reconnect_timer();
       client.loop();
       power_safe();
